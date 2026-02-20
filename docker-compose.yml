@@ -1,0 +1,12 @@
+# Neuro-Recover: backend API (MedGemma-style). For full stack, build web-app and serve dist/ separately.
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      # Set GEMINI_API_KEY for cloud LLM, or leave unset and use edge/rule-based
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    restart: unless-stopped

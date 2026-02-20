@@ -1,0 +1,28 @@
+---
+description: Config-driven flexibility and extension points for Neuro-Recover
+globs: "web-app/src/**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# App flexibility and config
+
+## Config-driven behavior
+
+- **App config** lives in `src/config/appConfig.ts`. Use it for:
+  - Session duration (`sessionDurationMinutes`)
+  - Feature toggles: `voiceEnabled`, `coachEnabled`, `pdfExportEnabled`, `recoveryEstimateEnabled`, `clinicianDashboardEnabled`, `vrPlaceholderEnabled`
+  - Game list: `games[]` with `id`, `path`, `label`, `description`, `icon`, `enabled`
+- Prefer reading from `getAppConfig()` or helpers like `getEnabledGames()`, `getSessionDurationMinutes()` instead of hardcoding.
+- Adding a new game: add an entry to `config.games` (and implement the route/component); no need to edit multiple UI files.
+
+## Extension points
+
+- **New game**: Implement a game component and add a `GameConfig` in `appConfig.games`; register the route in `App.tsx` and use the shared `SessionWrapper` + `getCurrentMetrics`.
+- **New feature flag**: Add a boolean to `AppConfig` and gate the feature in the relevant component.
+- **Remote config**: Later, `appConfig` can be loaded from env or an API and applied via `setAppConfig()`.
+
+## Rules
+
+- Do not hardcode session duration; use `getSessionDurationMinutes()`.
+- Do not hardcode the list of games in nav or dashboard; derive from `getEnabledGames()`.
+- Optional features (voice, coach, PDF, recovery estimate, clinician, VR) should check the corresponding config flag before rendering.

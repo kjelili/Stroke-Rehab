@@ -1,0 +1,23 @@
+{
+  "name": "neuro-recover-advert",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "remotion studio src/index.ts",
+    "build": "remotion render src/index.ts NeuroRecoverAdvert out/advert.mp4",
+    "render": "remotion render src/index.ts NeuroRecoverAdvert out/advert.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.200",
+    "@remotion/bundler": "^4.0.200",
+    "@remotion/renderer": "^4.0.200",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "remotion": "^4.0.200"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "typescript": "^5.0.0"
+  }
+}
