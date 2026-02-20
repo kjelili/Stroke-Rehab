@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Remotion Chrome headless shell (large binary; do not commit)
+.remotion/
+**/.remotion/
+
+# Build / output
+out/
+dist/
+*.mp4
+
+# Env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
