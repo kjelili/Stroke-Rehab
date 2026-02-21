@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getLastSession, getRecentSessions } from '../utils/sessionStorage';
+import { loadAgentState } from '../utils/agentState';
 import { VoiceBanner } from '../components/VoiceBanner';
 import { CoachBanner } from '../components/CoachBanner';
 import { useSessionOptional } from '../context/SessionContext';
 import { getAppConfig, getEnabledGames } from '../config/appConfig';
+import { fetchAgenticOrchestrate } from '../api/medgemma';
 import type { StoredSession } from '../types/session';
+import type { TherapyIntensity } from '../types/agentic';
 
 function formatDate(ts: number) {
   const d = new Date(ts);
@@ -17,12 +20,40 @@ export function Dashboard() {
   const sessionCtx = useSessionOptional();
   const [lastSession, setLastSession] = useState<StoredSession | null>(null);
   const [recentSessions, setRecentSessions] = useState<StoredSession[]>([]);
+  const [medgemmaIntensity, setMedgemmaIntensity] = useState<TherapyIntensity | null>(null);
+  const [medgemmaIntervention, setMedgemmaIntervention] = useState<{ reason: string; suggestedAction: string } | null>(null);
   const enabledGames = getEnabledGames();
 
   useEffect(() => {
     setLastSession(getLastSession());
     setRecentSessions(getRecentSessions(10));
-  }, []);
+  }, [sessionCtx?.lastCompletedSummary ?? null]);
+
+  useEffect(() => {
+    const sessions = getRecentSessions(25);
+    const patientState = loadAgentState();
+    let cancelled = false;
+    (async () => {
+      const result = await fetchAgenticOrchestrate({
+        sessions,
+        patientState,
+      });
+      if (!cancelled && result) {
+        setMedgemmaIntensity(result.recommendedIntensity);
+        if (result.interventions.length > 0) {
+          setMedgemmaIntervention(result.interventions[0]);
+        } else {
+          setMedgemmaIntervention(patientState.lastIntervention ?? null);
+        }
+      } else if (!cancelled) {
+        if (patientState.lastIntensity) {
+          setMedgemmaIntensity(patientState.lastIntensity);
+          setMedgemmaIntervention(patientState.lastIntervention ?? null);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [recentSessions.length, config.medgemmaBackendUrl]);
 
   return (
     <div className="flex-1 px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -37,6 +68,24 @@ export function Dashboard() {
         {config.voiceEnabled && <VoiceBanner />}
         {config.coachEnabled && (
           <CoachBanner lastSummary={sessionCtx?.lastCompletedSummary ?? null} recentSessions={recentSessions} />
+        )}
+
+        {(medgemmaIntensity || medgemmaIntervention) && (
+          <div className="mb-8 p-4 rounded-xl bg-brand-500/10 border border-brand-500/30">
+            <h2 className="font-display font-semibold text-brand-200 mb-2">MedGemma decisions (agentic workflow)</h2>
+            {medgemmaIntensity && (
+              <p className="text-sm text-brand-100 mb-1">
+                <strong className="text-white">Therapy intensity:</strong> MedGemma recommends <strong>{medgemmaIntensity}</strong> for your next session.
+              </p>
+            )}
+            {medgemmaIntervention && (medgemmaIntervention.reason || medgemmaIntervention.suggestedAction) && (
+              <p className="text-sm text-amber-100 mt-2">
+                <strong className="text-amber-200">Proactive intervention:</strong> {medgemmaIntervention.reason}
+                {medgemmaIntervention.suggestedAction && ` — ${medgemmaIntervention.suggestedAction}`}
+              </p>
+            )}
+            <p className="text-xs text-gray-500 mt-2">State memory: last recommendation is used across sessions.</p>
+          </div>
         )}
 
         {lastSession && typeof lastSession.endedAt === 'number' && (

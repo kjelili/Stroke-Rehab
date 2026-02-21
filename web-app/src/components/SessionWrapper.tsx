@@ -1,8 +1,11 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { GameType, SessionMetrics, SessionSummary } from '../types/session';
-import { saveSession } from '../utils/sessionStorage';
+import { saveSession, getRecentSessions } from '../utils/sessionStorage';
+import { saveAgentState, loadAgentState } from '../utils/agentState';
 import { useSession } from '../context/SessionContext';
 import { getSessionDurationMinutes, getAppConfig } from '../config/appConfig';
+import { fetchAgenticOrchestrate } from '../api/medgemma';
+import type { TherapyIntensity } from '../types/agentic';
 
 interface SessionWrapperProps {
   game: GameType;
@@ -97,6 +100,37 @@ export function SessionCompleteScreen({ summary, onClose }: SessionCompleteScree
   const { game, durationSeconds, metrics } = summary;
   const score = metrics.score ?? 0;
   const reactionMs = metrics.reactionTimeMs;
+  const [agenticResult, setAgenticResult] = useState<{
+    recommendedIntensity: TherapyIntensity;
+    sessionSummary: { summary: string; nextFocus: string } | null;
+    reasoning: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    const sessions = getRecentSessions(25);
+    const patientState = loadAgentState();
+    let cancelled = false;
+    (async () => {
+      const result = await fetchAgenticOrchestrate({
+        sessions,
+        currentSession: summary,
+        patientState,
+      });
+      if (!cancelled && result) {
+        setAgenticResult({
+          recommendedIntensity: result.recommendedIntensity,
+          sessionSummary: result.sessionSummary,
+          reasoning: result.reasoning,
+        });
+        saveAgentState({
+          lastIntensity: result.recommendedIntensity,
+          lastIntervention: result.interventions?.[0],
+          lastSummary: result.sessionSummary ?? undefined,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [summary.endedAt]);
 
   const handleExportPdf = () => {
     import('../utils/exportPdf').then(({ exportSessionPdf }) => exportSessionPdf(summary));
@@ -106,7 +140,7 @@ export function SessionCompleteScreen({ summary, onClose }: SessionCompleteScree
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-surface-elevated border border-gray-700 p-6 shadow-xl">
+      <div className="w-full max-w-md rounded-2xl bg-surface-elevated border border-gray-700 p-6 shadow-xl max-h-[90vh] overflow-y-auto">
         <h2 className="font-display font-bold text-xl text-white mb-4">Session complete</h2>
         <p className="text-gray-400 text-sm mb-2">
           Game: <span className="text-white">{game}</span>
@@ -124,6 +158,22 @@ export function SessionCompleteScreen({ summary, onClose }: SessionCompleteScree
             Reaction time: <span className="text-white">{reactionMs} ms</span>
           </p>
         )}
+
+        {agenticResult && (
+          <div className="mt-4 p-3 rounded-xl bg-brand-500/10 border border-brand-500/30">
+            <h3 className="font-display font-semibold text-brand-200 text-sm mb-2">MedGemma (agentic)</h3>
+            <p className="text-sm text-brand-100 mb-1">
+              <strong>Next therapy intensity:</strong> {agenticResult.recommendedIntensity}
+            </p>
+            {agenticResult.sessionSummary?.summary && (
+              <p className="text-sm text-gray-200 mt-2">{agenticResult.sessionSummary.summary}</p>
+            )}
+            {agenticResult.sessionSummary?.nextFocus && (
+              <p className="text-sm text-gray-300 mt-1">Next focus: {agenticResult.sessionSummary.nextFocus}</p>
+            )}
+          </div>
+        )}
+
         <div className="mt-4 flex gap-2">
           {pdfEnabled && (
             <button

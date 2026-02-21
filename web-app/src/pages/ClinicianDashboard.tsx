@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { getRecentSessions } from '../utils/sessionStorage';
-import { fetchClinicianSummary, fetchClinicalSuggestions, fetchFhirStructure } from '../api/medgemma';
+import { loadAgentState } from '../utils/agentState';
+import { fetchClinicianSummary, fetchClinicalSuggestions, fetchFhirStructure, fetchAgenticOrchestrate } from '../api/medgemma';
 import { buildFhirBundle, downloadFhirBundle } from '../utils/fhirBundle';
 import type { StoredSession } from '../types/session';
 
@@ -14,6 +15,7 @@ export function ClinicianDashboard() {
   const [sessions, setSessions] = useState<StoredSession[]>([]);
   const [clinicianSummary, setClinicianSummary] = useState<string | null>(null);
   const [clinicalSuggestions, setClinicalSuggestions] = useState<string[]>([]);
+  const [regressionIntervention, setRegressionIntervention] = useState<{ reason: string; suggestedAction: string } | null>(null);
 
   useEffect(() => {
     setSessions(getRecentSessions(50));
@@ -53,6 +55,28 @@ export function ClinicianDashboard() {
     })();
     return () => { cancelled = true; };
   }, [sessions]);
+
+  useEffect(() => {
+    if (alerts.length === 0) {
+      setRegressionIntervention(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const result = await fetchAgenticOrchestrate({
+        sessions: validSessions,
+        regressionDetected: true,
+        alerts: alerts.map((a) => ({ msg: a.msg })),
+        patientState: loadAgentState(),
+      });
+      if (!cancelled && result?.interventions?.length) {
+        setRegressionIntervention(result.interventions[0]);
+      } else {
+        setRegressionIntervention(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessions, alerts.length]);
 
   return (
     <div className="flex-1 px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -112,12 +136,19 @@ export function ClinicianDashboard() {
 
         {alerts.length > 0 && (
           <div className="mb-8 rounded-xl bg-amber-500/10 border border-amber-500/30 p-4">
-            <h2 className="font-display font-semibold text-amber-200 mb-2">Alerts</h2>
+            <h2 className="font-display font-semibold text-amber-200 mb-2">Alerts (regression detected)</h2>
             <ul className="space-y-1 text-sm text-amber-100">
               {alerts.map((a, i) => (
                 <li key={i}>{a.msg}</li>
               ))}
             </ul>
+            {regressionIntervention && (
+              <div className="mt-3 p-3 rounded-lg bg-brand-500/20 border border-brand-500/40">
+                <h3 className="font-display font-semibold text-brand-200 text-sm mb-1">MedGemma tool call: proactive intervention</h3>
+                <p className="text-sm text-gray-200">{regressionIntervention.reason}</p>
+                <p className="text-sm text-brand-100 mt-1"><strong>Suggested action:</strong> {regressionIntervention.suggestedAction}</p>
+              </div>
+            )}
           </div>
         )}
 

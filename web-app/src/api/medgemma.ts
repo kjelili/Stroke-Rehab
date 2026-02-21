@@ -1,10 +1,11 @@
 /**
- * Client for MedGemma-backed backend (progress report, clinician summary, coaching, dysarthria, clinical suggestions).
+ * Client for MedGemma-backed backend (progress report, clinician summary, coaching, dysarthria, clinical suggestions, agentic orchestration).
  * Falls back to null when backend is not configured or request fails.
  */
 
 import { getAppConfig } from '../config/appConfig';
 import type { SessionSummary, StoredSession } from '../types/session';
+import type { PatientState, AgenticOrchestrateResult } from '../types/agentic';
 
 function baseUrl(): string {
   return getAppConfig().medgemmaBackendUrl.replace(/\/$/, '');
@@ -79,6 +80,24 @@ export async function fetchClinicalSuggestions(
 /** FHIR structuring: sessions → FHIR Bundle (Observation resources). */
 export async function fetchFhirStructure(sessions: StoredSession[]): Promise<{ resourceType: string; type: string; entry: unknown[] } | null> {
   const out = await post<{ resourceType: string; type: string; entry: unknown[] }>('/api/fhir-structure', { sessions });
+  return out ?? null;
+}
+
+/** Agentic orchestration: MedGemma decisions, tool-calling, state memory. */
+export async function fetchAgenticOrchestrate(params: {
+  sessions: StoredSession[];
+  currentSession?: SessionSummary | StoredSession | null;
+  regressionDetected?: boolean;
+  alerts?: { msg: string }[];
+  patientState?: PatientState;
+}): Promise<AgenticOrchestrateResult | null> {
+  const out = await post<AgenticOrchestrateResult>('/api/agentic/orchestrate', {
+    sessions: params.sessions,
+    currentSession: params.currentSession ?? undefined,
+    regressionDetected: params.regressionDetected ?? false,
+    alerts: params.alerts ?? [],
+    patientState: params.patientState ?? {},
+  });
   return out ?? null;
 }
 

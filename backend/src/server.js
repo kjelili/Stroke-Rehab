@@ -14,6 +14,7 @@ import {
   structureFhir,
   isLlmAvailable,
 } from './llm.js';
+import { runAgenticOrchestration } from './agentic.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -98,6 +99,32 @@ app.post('/api/fhir-structure', async (req, res) => {
   if (!Array.isArray(sessions)) return res.status(400).json({ error: 'sessions array required' });
   const bundle = structureFhir(sessions);
   res.json(bundle);
+});
+
+/** POST /api/agentic/orchestrate — Agentic workflow: MedGemma decisions, tool-calling, state memory */
+app.post('/api/agentic/orchestrate', async (req, res) => {
+  const { sessions = [], currentSession, regressionDetected, alerts = [], patientState = {} } = req.body || {};
+  if (!Array.isArray(sessions)) return res.status(400).json({ error: 'sessions array required' });
+  try {
+    const result = await runAgenticOrchestration({
+      sessions,
+      currentSession: currentSession || undefined,
+      regressionDetected: !!regressionDetected,
+      alerts: Array.isArray(alerts) ? alerts : [],
+      patientState: patientState && typeof patientState === 'object' ? patientState : {},
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('Agentic orchestration error:', err?.message || err);
+    res.status(500).json({
+      error: 'Orchestration failed',
+      recommendedIntensity: 'medium',
+      interventions: [],
+      sessionSummary: null,
+      reasoning: null,
+      toolCallsMade: [],
+    });
+  }
 });
 
 app.listen(PORT, () => {

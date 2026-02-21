@@ -20,6 +20,11 @@ Focus: **Vision + Voice + MedGemma report generation.** The backend provides bot
 | `POST /api/icd10-tagging` | **ICD-10 tagging engine** — text or sessions → suggested ICD-10-CM codes |
 | `POST /api/fhir-structure` | **FHIR structuring system** — sessions → FHIR Bundle of Observation resources |
 
+**Agentic workflow (MedGemma decisions, tool-calling, state memory)**  
+| Endpoint | Capability |
+| -------- | ---------- |
+| `POST /api/agentic/orchestrate` | **Session orchestration** — sessions + optional currentSession, regressionDetected, alerts, patientState → recommended intensity, interventions, session summary. MedGemma calls tools: `set_therapy_intensity`, `trigger_regression_intervention`, `record_session_summary`. See `docs/AGENTIC_WORKFLOW.md`. |
+
 ## Setup
 
 1. Copy `.env.example` to `.env` and set `GEMINI_API_KEY` (from [Google AI Studio](https://aistudio.google.com/apikey)). The server loads `.env` via `dotenv` (no need to export the key in the shell).
