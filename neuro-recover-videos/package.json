@@ -1,0 +1,20 @@
+{
+  "name": "neuro-recover-videos",
+  "version": "1.0.0",
+  "description": "Remotion video project for Neuro-Recover: AI-Powered Gamified Stroke Rehabilitation",
+  "scripts": {
+    "start": "npx remotion studio",
+    "build": "npx remotion render",
+    "render:live-demo": "npx remotion render src/index.ts LiveDemo out/live-demo.mp4",
+    "render:advert": "npx remotion render src/index.ts AdvertDemo out/advert-demo.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "remotion": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "typescript": "^5.0.0"
+  }
+}
