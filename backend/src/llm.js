@@ -1,26 +1,34 @@
 /**
- * LLM layer for MedGemma-style capabilities.
- * Uses Google Gemini API with medical prompts (swap to Vertex AI MedGemma endpoint when deployed).
+ * LLM layer: real MedGemma (Vertex AI) or Gemini API fallback.
+ * When MEDGEMMA_USE_VERTEX=true and GOOGLE_CLOUD_PROJECT, VERTEX_LOCATION, VERTEX_MEDGEMMA_ENDPOINT_ID
+ * are set, uses the HAI-DEF MedGemma model deployed on Vertex AI. Otherwise uses Gemini API.
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { vertexMedGemmaGenerate, isVertexMedGemmaAvailable } from './medgemma-vertex.js';
+
+const useVertexMedGemma = process.env.MEDGEMMA_USE_VERTEX === 'true' && isVertexMedGemmaAvailable();
 
 const apiKey = process.env.GEMINI_API_KEY || process.env.MEDGEMMA_API_KEY;
 const model = process.env.MEDGEMMA_MODEL || 'gemini-2.0-flash';
 
-let client = null;
+let geminiClient = null;
 if (apiKey) {
-  client = new GoogleGenAI({ apiKey });
+  geminiClient = new GoogleGenAI({ apiKey });
 }
 
 const SYSTEM_MEDICAL =
   'You are a clinical assistant for stroke rehabilitation. Respond in plain language, 2-4 sentences. Be supportive and evidence-informed. Do not give specific medical diagnoses; suggest trends and encourage follow-up with clinicians.';
 
 export async function generate(prompt, system = SYSTEM_MEDICAL) {
-  if (!client) return null;
+  if (useVertexMedGemma) {
+    const text = await vertexMedGemmaGenerate(system, prompt, 512, 0.4);
+    if (text != null) return text;
+  }
+  if (!geminiClient) return null;
   try {
     const contents = `${system}\n\n${prompt}`;
-    const response = await client.models.generateContent({
+    const response = await geminiClient.models.generateContent({
       model,
       contents,
       config: { maxOutputTokens: 512, temperature: 0.4 },
@@ -208,5 +216,9 @@ export async function structureFhir(sessions) {
 }
 
 export function isLlmAvailable() {
-  return !!client;
+  return useVertexMedGemma || !!geminiClient;
+}
+
+export function isMedGemmaVertex() {
+  return useVertexMedGemma;
 }

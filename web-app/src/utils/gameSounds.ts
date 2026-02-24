@@ -62,3 +62,10 @@ export function playReach(): void {
 export function playStep(): void {
   playTone(440, 60, 'sine', 0.09);
 }
+
+/** Session complete: short positive chime */
+export function playSuccess(): void {
+  playTone(523, 120, 'sine', 0.12);
+  setTimeout(() => playTone(659, 100, 'sine', 0.1), 80);
+  setTimeout(() => playTone(784, 150, 'sine', 0.1), 180);
+}

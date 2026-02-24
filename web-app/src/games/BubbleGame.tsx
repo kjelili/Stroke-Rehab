@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CameraView } from '../components/CameraView';
 import { SessionWrapper } from '../components/SessionWrapper';
+import { useSessionOptional } from '../context/SessionContext';
 import { useHandTracking, type HandResult, type Landmark } from '../hooks/useHandTracking';
 import type { SessionMetrics } from '../types/session';
 import { playPop } from '../utils/gameSounds';
+
+const ENCOURAGEMENTS = ['Nice pinch!', 'Good reach!', 'Well done!', 'Keep it up!'];
 
 interface Bubble {
   id: number;
@@ -20,8 +23,11 @@ const ADAPT_WINDOW_MS = 10000;
 const MIN_SPAWN_MS = 800;
 const MAX_SPAWN_MS = 2500;
 const BASE_SPAWN_MS = 1500;
+const BASE_SPAWN_MS_EASIER = 2200;
 const MIN_SIZE = 0.03;
 const MAX_SIZE = 0.08;
+const EASIER_SIZE_MIN = 0.05;
+const EASIER_SIZE_RANGE = 0.04;
 
 function distance(x1: number, y1: number, x2: number, y2: number) {
   return Math.hypot(x2 - x1, y2 - y1);
@@ -37,15 +43,27 @@ function getPinchPoint(landmarks: Landmark[]): { x: number; y: number } | null {
 }
 
 export function BubbleGame() {
+  const sessionCtx = useSessionOptional();
+  const easierMode = sessionCtx?.easierMode ?? false;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const nextIdRef = useRef(0);
   const [score, setScore] = useState(0);
+  const [encouragement, setEncouragement] = useState<string | null>(null);
   const popTimestampsRef = useRef<number[]>([]);
-  const [spawnIntervalMs, setSpawnIntervalMs] = useState(BASE_SPAWN_MS);
-  const sizeMinRef = useRef(0.04);
-  const sizeRangeRef = useRef(0.03);
+  const baseSpawn = easierMode ? BASE_SPAWN_MS_EASIER : BASE_SPAWN_MS;
+  const [spawnIntervalMs, setSpawnIntervalMs] = useState(baseSpawn);
+  const sizeMinRef = useRef(easierMode ? EASIER_SIZE_MIN : 0.04);
+  const sizeRangeRef = useRef(easierMode ? EASIER_SIZE_RANGE : 0.03);
+
+  useEffect(() => {
+    if (easierMode) {
+      sizeMinRef.current = EASIER_SIZE_MIN;
+      sizeRangeRef.current = EASIER_SIZE_RANGE;
+      setSpawnIntervalMs(BASE_SPAWN_MS_EASIER);
+    }
+  }, [easierMode]);
 
   const spawn = useCallback(() => {
     const sizeMin = sizeMinRef.current;
@@ -100,7 +118,14 @@ export function BubbleGame() {
       const hit = prev.find((b) => distance(pinch!.x, pinch!.y, b.x, b.y) < b.r + 0.03);
       if (hit) {
         popTimestampsRef.current.push(Date.now());
-        setScore((s) => s + 1);
+        setScore((s) => {
+          const next = s + 1;
+          if (next % 3 === 0) {
+            setEncouragement(ENCOURAGEMENTS[Math.floor((next - 1) / 3) % ENCOURAGEMENTS.length]);
+            setTimeout(() => setEncouragement(null), 2000);
+          }
+          return next;
+        });
         playPop();
         return prev.filter((b) => b.id !== hit.id);
       }
@@ -118,7 +143,14 @@ export function BubbleGame() {
   const popBubble = useCallback((bubble: Bubble) => {
     popTimestampsRef.current.push(Date.now());
     setBubbles((prev) => prev.filter((b) => b.id !== bubble.id));
-    setScore((s) => s + 1);
+    setScore((s) => {
+      const next = s + 1;
+      if (next % 3 === 0) {
+        setEncouragement(ENCOURAGEMENTS[Math.floor((next - 1) / 3) % ENCOURAGEMENTS.length]);
+        setTimeout(() => setEncouragement(null), 2000);
+      }
+      return next;
+    });
     playPop();
   }, []);
 
@@ -176,6 +208,9 @@ export function BubbleGame() {
             </CameraView>
             <div className="flex flex-col justify-center rounded-xl bg-surface-elevated border border-gray-800 p-6 min-h-[200px]">
               <p className="font-display font-semibold text-white text-2xl mb-2">Score: {score}</p>
+              {encouragement && (
+                <p className="text-brand-400 text-sm font-medium mb-2 animate-pulse" role="status">{encouragement}</p>
+              )}
               <p className="text-gray-400 text-sm">
                 Bubbles appear over the camera view. Pinch or tap to pop. Difficulty adapts in real time.
               </p>

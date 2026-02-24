@@ -1,9 +1,32 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState } from 'react';
 import { Outlet, Link, NavLink } from 'react-router-dom';
 import { useSessionOptional } from '../context/SessionContext';
 import { SessionCompleteScreen } from '../components/SessionWrapper';
 import { DemoOverlay } from '../components/DemoOverlay';
 import { getAppConfig, getEnabledGames } from '../config/appConfig';
+
+const HIGH_CONTRAST_KEY = 'neuro-recover-high-contrast';
+
+function useHighContrast() {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem(HIGH_CONTRAST_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (on) document.documentElement.classList.add('theme-high-contrast');
+    else document.documentElement.classList.remove('theme-high-contrast');
+    try {
+      localStorage.setItem(HIGH_CONTRAST_KEY, String(on));
+    } catch {
+      // ignore
+    }
+  }, [on]);
+  return [on, () => setOn((v) => !v)] as const;
+}
 
 function useNavItems() {
   return useMemo(() => {
@@ -30,6 +53,7 @@ export function AppShell() {
   const lastCompleted = session?.lastCompletedSummary;
   const clearLastCompleted = session?.clearLastCompleted;
   const navItems = useNavItems();
+  const [highContrast, toggleHighContrast] = useHighContrast();
 
   const showCompleteScreen =
     lastCompleted &&
@@ -49,8 +73,20 @@ export function AppShell() {
               Neuro-Recover
             </Link>
             {getAppConfig().edgeMode && (
-              <span className="shrink-0 rounded bg-gray-700/80 px-2 py-1 text-xs font-medium text-gray-300" title="Edge deployment: runs offline, no cloud required">
-                Offline
+              <span
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-amber-500/20 border border-amber-500/40 px-2.5 py-1 text-xs font-medium text-amber-200"
+                title="Edge deployment: app runs fully offline, no cloud or MedGemma backend"
+              >
+                <span aria-hidden>📴</span>
+                Edge: Offline
+              </span>
+            )}
+            {!getAppConfig().edgeMode && (getAppConfig().medgemmaBackendUrl?.trim().length ?? 0) > 0 && (
+              <span
+                className="shrink-0 hidden sm:inline-flex items-center gap-1 rounded bg-brand-500/20 px-2 py-1 text-xs font-medium text-brand-300"
+                title="MedGemma (HAI-DEF) backend connected for agentic orchestration and reports"
+              >
+                MedGemma
               </span>
             )}
             <nav className="flex items-center gap-1 min-w-0 flex-1 justify-center lg:justify-start" aria-label="Main">
@@ -71,6 +107,15 @@ export function AppShell() {
                 </NavLink>
               ))}
             </nav>
+            <button
+              type="button"
+              onClick={toggleHighContrast}
+              className="tap-target rounded-lg px-2 py-1 text-sm text-gray-400 hover:text-brand-400 shrink-0"
+              title={highContrast ? 'Turn off high contrast' : 'High contrast'}
+              aria-pressed={highContrast}
+            >
+              {highContrast ? '☀️ Aa' : 'Aa'}
+            </button>
             <Link to="/login" className="text-sm text-gray-400 hover:text-brand-400 tap-target rounded-lg px-2 py-1 shrink-0">
               Sign in
             </Link>

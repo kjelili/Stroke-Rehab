@@ -236,6 +236,7 @@ export function PianoGame() {
                       w-10 sm:w-14 h-24 sm:h-32 rounded-b border-2 border-gray-700 transition-transform tap-target
                       ${key.color} ${displayedKeys.has(key.id) ? 'scale-y-95 border-brand-500 shadow-inner' : 'border-gray-600'}
                       ${mode === 'task-index' && key.id === 'C' ? 'ring-2 ring-brand-400' : ''}
+                      ${mode === 'task-melody' && melodyStep < MELODY_5.length && key.id === MELODY_5[melodyStep] ? 'ring-2 ring-brand-400' : ''}
                     `}
                     style={{ minWidth: '44px' }}
                     aria-label={`Key ${key.note}`}

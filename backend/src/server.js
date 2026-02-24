@@ -13,8 +13,11 @@ import {
   suggestIcd10,
   structureFhir,
   isLlmAvailable,
+  isMedGemmaVertex,
 } from './llm.js';
-import { runAgenticOrchestration } from './agentic.js';
+import { runAgenticOrchestration, isAgenticLlmAvailable } from './agentic.js';
+import { hearEmbed, isHearAvailable } from './hear.js';
+import { medSigLIPEmbed, isMedSigLIPAvailable } from './medsiglip.js';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -23,7 +26,42 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: '256kb' }));
 
 app.get('/api/health', (_, res) => {
-  res.json({ ok: true, llm: isLlmAvailable() });
+  res.json({
+    ok: true,
+    llm: isLlmAvailable(),
+    medgemmaVertex: isMedGemmaVertex(),
+    agentic: isAgenticLlmAvailable(),
+    hear: isHearAvailable(),
+    medsiglip: isMedSigLIPAvailable(),
+  });
+});
+
+/** GET /api/hai-def — which HAI-DEF models are in use (MedGemma, HEAR, MedSigLIP) */
+app.get('/api/hai-def', (_, res) => {
+  res.json({
+    medgemma: isMedGemmaVertex() ? 'Vertex AI (deployed MedGemma)' : (isLlmAvailable() ? 'Gemini API (proxy)' : 'none'),
+    hear: isHearAvailable() ? 'Vertex AI (HEAR endpoint)' : 'none',
+    medsiglip: isMedSigLIPAvailable() ? 'Vertex AI (MedSigLIP endpoint)' : 'none',
+  });
+});
+
+/** POST /api/medsiglip/embed — MedSigLIP (HAI-DEF) image/text embeddings; body: { imageBase64, text? } */
+app.post('/api/medsiglip/embed', async (req, res) => {
+  const { imageBase64, text } = req.body || {};
+  const result = await medSigLIPEmbed(imageBase64, text);
+  if (result.error && !result.embedding) return res.status(422).json(result);
+  res.json(result);
+});
+
+/** POST /api/hear/analyze — HEAR (HAI-DEF) bioacoustic embeddings; body: { audioBase64 } — WAV 2s, 16kHz mono */
+app.post('/api/hear/analyze', async (req, res) => {
+  const { audioBase64 } = req.body || {};
+  if (!isHearAvailable()) return res.status(503).json({ error: 'HEAR not configured', hint: 'Set HEAR_VERTEX_ENDPOINT_ID, GOOGLE_CLOUD_PROJECT, VERTEX_LOCATION' });
+  if (!audioBase64 || typeof audioBase64 !== 'string') return res.status(400).json({ error: 'audioBase64 required (base64 WAV, 2s, 16kHz mono)' });
+  const result = await hearEmbed(audioBase64);
+  if (!result) return res.status(502).json({ error: 'HEAR request failed' });
+  if (result.error) return res.status(422).json({ error: result.error, embedding: null });
+  res.json({ embedding: result.embedding, model: 'HEAR' });
 });
 
 /** POST /api/session-interpretation — body: { session } */
@@ -129,5 +167,8 @@ app.post('/api/agentic/orchestrate', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Neuro-Recover backend on http://localhost:${PORT}`);
-  if (!isLlmAvailable()) console.warn('No GEMINI_API_KEY set; LLM features will return null.');
+  if (isMedGemmaVertex()) console.log('MedGemma: Vertex AI (HAI-DEF)');
+  else if (isLlmAvailable()) console.log('MedGemma: Gemini API proxy');
+  else console.warn('No GEMINI_API_KEY or Vertex MedGemma; LLM features will return null.');
+  if (isHearAvailable()) console.log('HEAR: Vertex AI (HAI-DEF)');
 });

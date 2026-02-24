@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getRecentSessions } from '../utils/sessionStorage';
+import { getRecentSessions, getSessionsThisWeek, getCurrentStreak } from '../utils/sessionStorage';
 import { exportRecentSessionsPdf } from '../utils/exportPdf';
 import { getRecoveryMessage } from '../utils/digitalTwin';
 import { getAppConfig } from '../config/appConfig';
@@ -29,6 +29,10 @@ export function Progress() {
 
   const config = getAppConfig();
   const totalMinutes = sessions.reduce((acc, s) => acc + s.durationSeconds / 60, 0);
+  const sessionsThisWeek = getSessionsThisWeek();
+  const streak = getCurrentStreak();
+  const weeklyGoal = config.weeklyGoalSessions ?? 3;
+  const weekGoalReached = weeklyGoal > 0 && sessionsThisWeek.length >= weeklyGoal;
 
   return (
     <div className="flex-1 px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -65,6 +69,16 @@ export function Progress() {
           <p className="text-gray-400 text-sm">
             Sessions: <span className="text-white font-medium">{sessions.length}</span>
           </p>
+          {weeklyGoal > 0 && (
+            <p className="text-gray-400 text-sm mt-1">
+              This week: <span className={weekGoalReached ? 'text-green-400 font-medium' : 'text-white font-medium'}>{sessionsThisWeek.length}/{weeklyGoal}</span> sessions {weekGoalReached && '✓'}
+            </p>
+          )}
+          {streak > 0 && (
+            <p className="text-gray-400 text-sm mt-1">
+              Streak: <span className="text-white font-medium">{streak}</span> day{streak !== 1 ? 's' : ''} in a row
+            </p>
+          )}
         </div>
 
         {config.recoveryEstimateEnabled && sessions.length >= 2 && (

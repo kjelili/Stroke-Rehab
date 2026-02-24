@@ -1,6 +1,6 @@
 # Capability Review: MedGemma-Based Features
 
-This document compares the requested MedGemma-backed capabilities with what the Neuro-Recover app currently implements.
+This document compares the requested MedGemma-backed capabilities with what the Neuro-Recover app implements. **Current state:** The backend provides MedGemma-style endpoints (progress report, clinician summary, SOAP, ICD-10, FHIR, coaching, dysarthria, clinical reasoning) and an **agentic workflow** (tool-calling for therapy intensity, regression intervention, session summary) via the Gemini API with medical prompts; the same interface is designed to swap to Vertex AI MedGemma or local open-weight MedGemma (see `backend/FEASIBILITY.md`, `docs/AGENTIC_WORKFLOW.md`).
 
 | Component | Requested model | Current capability | Gap |
 | --------- | --------------- | ------------------ | --- |

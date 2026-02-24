@@ -29,9 +29,27 @@
       transition-duration: 0.01ms !important;
     }
   }
+
+  /* High-contrast / comfort theme (optional; add class "theme-high-contrast" to html) */
+  html.theme-high-contrast {
+    --contrast-bg: #0d0d0d;
+    --contrast-surface: #1a1a1a;
+    --contrast-text: #ffffff;
+    --contrast-border: #444;
+  }
+  html.theme-high-contrast body {
+    background-color: var(--contrast-bg);
+    color: var(--contrast-text);
+  }
+  html.theme-high-contrast .bg-surface { background-color: var(--contrast-bg); }
+  html.theme-high-contrast .bg-surface-elevated,
+  html.theme-high-contrast .bg-surface-muted { background-color: var(--contrast-surface); }
+  html.theme-high-contrast .border-gray-700,
+  html.theme-high-contrast .border-gray-800 { border-color: var(--contrast-border); }
 }
 
 @layer components {
+  /* Minimum 44px touch target for accessibility */
   .tap-target {
     @apply min-h-[44px] min-w-[44px] flex items-center justify-center;
   }

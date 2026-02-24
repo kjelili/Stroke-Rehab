@@ -3,7 +3,13 @@ import type { GameType, SessionMetrics, SessionSummary } from '../types/session'
 import { saveSession, getRecentSessions } from '../utils/sessionStorage';
 import { saveAgentState, loadAgentState } from '../utils/agentState';
 import { useSession } from '../context/SessionContext';
-import { getSessionDurationMinutes, getAppConfig } from '../config/appConfig';
+import {
+  getSessionDurationMinutes,
+  getAppConfig,
+  SESSION_DURATION_PRESETS,
+  getDurationMinutesFromIntensity,
+  type DurationPreset,
+} from '../config/appConfig';
 import { fetchAgenticOrchestrate } from '../api/medgemma';
 import type { TherapyIntensity } from '../types/agentic';
 
@@ -15,7 +21,7 @@ interface SessionWrapperProps {
 }
 
 export function SessionWrapper({ game, children, getCurrentMetrics, durationMinutes }: SessionWrapperProps) {
-  const defaultDuration = durationMinutes ?? getSessionDurationMinutes();
+  const configDefault = getSessionDurationMinutes();
   const {
     sessionActive,
     game: ctxGame,
@@ -25,7 +31,19 @@ export function SessionWrapper({ game, children, getCurrentMetrics, durationMinu
     endSession,
     setOnSessionComplete,
     setGetCurrentMetrics,
+    suggestedIntensity,
+    easierMode,
+    isPaused,
+    pauseRemainingSeconds,
+    startPause,
   } = useSession();
+
+  const [chosenPreset, setChosenPreset] = useState<DurationPreset | 'medgemma'>('standard');
+  const defaultFromIntensity = suggestedIntensity ? getDurationMinutesFromIntensity(suggestedIntensity) : configDefault;
+  const defaultDuration =
+    durationMinutes ??
+    (chosenPreset === 'medgemma' ? defaultFromIntensity : SESSION_DURATION_PRESETS[chosenPreset]);
+  const effectiveMinutes = easierMode ? Math.max(2, Math.min(defaultDuration, SESSION_DURATION_PRESETS.short)) : defaultDuration;
 
   const handleComplete = useCallback((summary: SessionSummary | null | undefined) => {
     if (summary != null && typeof summary.endedAt === 'number') saveSession(summary);
@@ -43,24 +61,57 @@ export function SessionWrapper({ game, children, getCurrentMetrics, durationMinu
     return () => setGetCurrentMetrics(null);
   }, [sessionActive, ctxGame, game, setGetCurrentMetrics, getCurrentMetrics]);
 
-  const handleStart = useCallback(() => {
-    startSession(game, defaultDuration * 60);
-  }, [game, defaultDuration, startSession]);
+  const handleStart = useCallback(
+    (minutes?: number) => {
+      const mins = minutes ?? effectiveMinutes;
+      startSession(game, mins * 60);
+    },
+    [game, effectiveMinutes, startSession]
+  );
 
   const handleEnd = useCallback(() => {
     endSession({ metrics: getCurrentMetrics() });
   }, [endSession, getCurrentMetrics]);
 
   if (!sessionActive || ctxGame !== game) {
+    const chosenMinutes =
+      chosenPreset === 'medgemma' ? defaultFromIntensity : SESSION_DURATION_PRESETS[chosenPreset];
+    const startMinutes = easierMode ? Math.max(2, Math.min(chosenMinutes, SESSION_DURATION_PRESETS.short)) : chosenMinutes;
     return (
       <>
-        <div className="mb-4 flex items-center gap-4">
+        <div className="mb-4 flex flex-col gap-3">
+          <p className="text-sm text-gray-400">Session length</p>
+          <div className="flex flex-wrap gap-2">
+            {(['short', 'standard', 'longer'] as const).map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setChosenPreset(preset)}
+                className={`tap-target rounded-xl px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-400 ${
+                  chosenPreset === preset ? 'bg-brand-500 text-white' : 'bg-surface-muted text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                {preset === 'short' ? 'Short (2 min)' : preset === 'standard' ? 'Standard (3 min)' : 'Longer (5 min)'}
+              </button>
+            ))}
+            {suggestedIntensity && (
+              <button
+                type="button"
+                onClick={() => setChosenPreset('medgemma')}
+                className={`tap-target rounded-xl px-4 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-400 ${
+                  chosenPreset === 'medgemma' ? 'bg-brand-500 text-white' : 'bg-surface-muted text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                MedGemma ({defaultFromIntensity} min)
+              </button>
+            )}
+          </div>
           <button
             type="button"
-            onClick={handleStart}
+            onClick={() => handleStart(startMinutes)}
             className="tap-target rounded-xl bg-brand-500 px-4 py-2 text-white font-medium hover:bg-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-400"
           >
-            Start {defaultDuration}-min session
+            Start {startMinutes}-min session
           </button>
         </div>
         {children}
@@ -74,10 +125,32 @@ export function SessionWrapper({ game, children, getCurrentMetrics, durationMinu
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center gap-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="rounded-xl bg-surface-elevated border border-gray-700 px-4 py-2 font-mono text-white">
           Time: {mins}:{secs.toString().padStart(2, '0')}
         </div>
+        {!isPaused ? (
+          <>
+            <button
+              type="button"
+              onClick={() => startPause(60)}
+              className="tap-target rounded-xl border border-gray-600 px-3 py-2 text-sm text-gray-300 hover:border-brand-500 hover:text-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              Pause 1 min
+            </button>
+            <button
+              type="button"
+              onClick={() => startPause(120)}
+              className="tap-target rounded-xl border border-gray-600 px-3 py-2 text-sm text-gray-300 hover:border-brand-500 hover:text-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            >
+              Pause 2 min
+            </button>
+          </>
+        ) : (
+          <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 px-4 py-2 text-amber-200 font-medium">
+            Rest: {pauseRemainingSeconds}s — resume automatically
+          </div>
+        )}
         <button
           type="button"
           onClick={handleEnd}
@@ -138,10 +211,20 @@ export function SessionCompleteScreen({ summary, onClose }: SessionCompleteScree
 
   const pdfEnabled = getAppConfig().pdfExportEnabled;
 
+  useEffect(() => {
+    import('../utils/gameSounds').then(({ playSuccess: play }) => play());
+  }, []);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
       <div className="w-full max-w-md rounded-2xl bg-surface-elevated border border-gray-700 p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-        <h2 className="font-display font-bold text-xl text-white mb-4">Session complete</h2>
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-3xl rounded-full bg-green-500/20 text-green-400 flex items-center justify-center w-12 h-12" aria-hidden>✓</span>
+          <div>
+            <h2 className="font-display font-bold text-xl text-white">Session complete</h2>
+            <p className="text-green-400 text-sm font-medium">You did it!</p>
+          </div>
+        </div>
         <p className="text-gray-400 text-sm mb-2">
           Game: <span className="text-white">{game}</span>
         </p>
@@ -161,7 +244,8 @@ export function SessionCompleteScreen({ summary, onClose }: SessionCompleteScree
 
         {agenticResult && (
           <div className="mt-4 p-3 rounded-xl bg-brand-500/10 border border-brand-500/30">
-            <h3 className="font-display font-semibold text-brand-200 text-sm mb-2">MedGemma (agentic)</h3>
+            <h3 className="font-display font-semibold text-brand-200 text-sm mb-1">MedGemma — agentic orchestration</h3>
+            <p className="text-xs text-brand-300/80 mb-2">From tool <code className="bg-black/30 px-1 rounded">record_session_summary</code> after session end.</p>
             <p className="text-sm text-brand-100 mb-1">
               <strong>Next therapy intensity:</strong> {agenticResult.recommendedIntensity}
             </p>

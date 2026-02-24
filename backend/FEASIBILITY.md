@@ -6,15 +6,12 @@ This document describes how the stack satisfies feasibility requirements for **M
 
 ## MedGemma fine-tuning (rehab notes, SOAP notes, stroke clinical data)
 
-The backend today uses the **Google Gemini API** with medical-style prompts to provide:
+The backend supports **real MedGemma (HAI-DEF)** when Vertex AI is configured:
 
-- Progress report generation  
-- Clinician reasoning summaries  
-- Emotion-aware coaching  
-- Dysarthria linguistic analysis  
-- Clinical decision suggestions  
+- Set `MEDGEMMA_USE_VERTEX=true`, `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MEDGEMMA_ENDPOINT_ID`. All generative and agentic endpoints then use the **deployed MedGemma** model on Vertex AI (see `src/medgemma-vertex.js`, `src/llm.js`, `src/agentic.js`).
+- Optionally add **HEAR** (Health Acoustic Representations): set `HEAR_VERTEX_ENDPOINT_ID` for `POST /api/hear/analyze` (bioacoustic embeddings). See `src/hear.js`.
 
-For production, you can replace this with **MedGemma** (or another medical LLM) fine-tuned on:
+When Vertex is not configured, the backend uses the **Gemini API** with medical prompts as a development proxy. For production and competition judging, use Vertex AI MedGemma (and optionally HEAR). Fine-tuning MedGemma on:
 
 - **Rehab notes** – session summaries, goals, progress notes.  
 - **SOAP notes** – Subjective, Objective, Assessment, Plan.  

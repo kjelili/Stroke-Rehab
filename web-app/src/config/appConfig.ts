@@ -5,6 +5,7 @@
  */
 
 import type { GameType } from '../types/session';
+import type { TherapyIntensity } from '../types/agentic';
 
 export interface GameConfig {
   id: GameType;
@@ -14,6 +15,15 @@ export interface GameConfig {
   icon: string;
   enabled: boolean;
 }
+
+/** Session duration presets (minutes) for Short / Standard / Longer */
+export const SESSION_DURATION_PRESETS = {
+  short: 2,
+  standard: 3,
+  longer: 5,
+} as const;
+
+export type DurationPreset = keyof typeof SESSION_DURATION_PRESETS;
 
 export interface AppConfig {
   /** When true, app runs in edge deployment: no cloud backend, all data and logic local. Use for hospital tablet, community laptop, rural clinic (no internet). */
@@ -36,6 +46,18 @@ export interface AppConfig {
   vrPlaceholderEnabled: boolean;
   /** List of games: order and visibility. Set enabled: false to hide from UI. */
   games: GameConfig[];
+  /** Weekly goal: number of sessions to complete per week (e.g. 3) */
+  weeklyGoalSessions: number;
+}
+
+/** Map MedGemma intensity to suggested session duration in minutes: low → shorter/gentler, high → longer. */
+export function getDurationMinutesFromIntensity(intensity: TherapyIntensity): number {
+  switch (intensity) {
+    case 'low': return SESSION_DURATION_PRESETS.short;
+    case 'medium': return SESSION_DURATION_PRESETS.standard;
+    case 'high': return SESSION_DURATION_PRESETS.longer;
+    default: return SESSION_DURATION_PRESETS.standard;
+  }
 }
 
 const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -53,6 +75,7 @@ export const defaultAppConfig: AppConfig = {
   recoveryEstimateEnabled: false,
   clinicianDashboardEnabled: true,
   vrPlaceholderEnabled: false,
+  weeklyGoalSessions: 3,
   games: [
     { id: 'piano', path: '/app/piano', label: 'Piano', description: 'Finger isolation and reaction time. Each finger maps to a key.', icon: '🎹', enabled: true },
     { id: 'bubbles', path: '/app/bubbles', label: 'Bubbles', description: 'Reach, pinch, and pop. Builds reach and pinch control.', icon: '🫧', enabled: true },

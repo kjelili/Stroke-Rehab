@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
 import type { GameType, SessionMetrics, SessionSummary } from '../types/session';
+import type { TherapyIntensity } from '../types/agentic';
 
 interface SessionContextValue {
   sessionActive: boolean;
@@ -14,6 +15,17 @@ interface SessionContextValue {
   setGetCurrentMetrics: (fn: (() => SessionMetrics) | null) => void;
   lastCompletedSummary: SessionSummary | null;
   clearLastCompleted: () => void;
+  /** MedGemma-recommended intensity; used for default duration when starting a session */
+  suggestedIntensity: TherapyIntensity | null;
+  setSuggestedIntensity: (v: TherapyIntensity | null) => void;
+  /** When true, games use easier settings (e.g. bigger/slower bubbles, shorter sessions) */
+  easierMode: boolean;
+  setEasierMode: (v: boolean) => void;
+  /** Pause/rest during session */
+  isPaused: boolean;
+  pauseRemainingSeconds: number;
+  startPause: (seconds: number) => void;
+  clearPause: () => void;
 }
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -28,7 +40,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [startedAt, setStartedAt] = useState(0);
   const [onSessionComplete, setOnSessionComplete] = useState<((summary: SessionSummary) => void) | null>(null);
   const [lastCompletedSummary, setLastCompletedSummary] = useState<SessionSummary | null>(null);
+  const [suggestedIntensity, setSuggestedIntensity] = useState<TherapyIntensity | null>(null);
+  const [easierMode, setEasierMode] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [pauseEndsAt, setPauseEndsAt] = useState(0);
+  const [pauseRemainingSeconds, setPauseRemainingSeconds] = useState(0);
   const getCurrentMetricsRef = useRef<(() => SessionMetrics) | null>(null);
+  const startedAtRef = useRef(0);
+  const elapsedAtPauseStartRef = useRef(0);
 
   const setGetCurrentMetrics = useCallback((fn: (() => SessionMetrics) | null) => {
     getCurrentMetricsRef.current = fn;
@@ -39,8 +58,29 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setGame(g);
     setDurationSeconds(dur);
     setElapsedSeconds(0);
-    setStartedAt(Date.now());
+    const now = Date.now();
+    setStartedAt(now);
+    startedAtRef.current = now;
     setSessionActive(true);
+    setIsPaused(false);
+    setPauseEndsAt(0);
+  }, []);
+
+  const startPause = useCallback((seconds: number) => {
+    const elapsed = Math.floor((Date.now() - startedAtRef.current) / 1000);
+    elapsedAtPauseStartRef.current = elapsed;
+    setPauseEndsAt(Date.now() + seconds * 1000);
+    setIsPaused(true);
+    setPauseRemainingSeconds(seconds);
+  }, []);
+
+  const clearPause = useCallback(() => {
+    const elapsed = elapsedAtPauseStartRef.current;
+    startedAtRef.current = Date.now() - elapsed * 1000;
+    setStartedAt(startedAtRef.current);
+    setIsPaused(false);
+    setPauseEndsAt(0);
+    setPauseRemainingSeconds(0);
   }, []);
 
   const endSession = useCallback(
@@ -78,6 +118,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setGetCurrentMetrics,
     lastCompletedSummary,
     clearLastCompleted,
+    suggestedIntensity,
+    setSuggestedIntensity,
+    easierMode,
+    setEasierMode,
+    isPaused,
+    pauseRemainingSeconds,
+    startPause,
+    clearPause,
   };
 
   return (
@@ -87,6 +135,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
         <SessionTimer
           durationSeconds={durationSeconds}
           startedAt={startedAt}
+          isPaused={isPaused}
+          pauseEndsAt={pauseEndsAt}
+          pauseRemainingSeconds={pauseRemainingSeconds}
+          setPauseRemainingSeconds={setPauseRemainingSeconds}
           onTick={setElapsedSeconds}
           onExpire={() => {
             const g = game;
@@ -107,6 +159,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
               onSessionComplete?.(summary);
             }
           }}
+          onPauseEnd={clearPause}
         />
       )}
     </SessionContext.Provider>
@@ -116,25 +169,39 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 function SessionTimer({
   durationSeconds,
   startedAt,
+  isPaused,
+  pauseEndsAt,
+  setPauseRemainingSeconds,
   onTick,
   onExpire,
+  onPauseEnd,
 }: {
   durationSeconds: number;
   startedAt: number;
+  isPaused: boolean;
+  pauseEndsAt: number;
+  pauseRemainingSeconds: number;
+  setPauseRemainingSeconds: (n: number) => void;
   onTick: (elapsed: number) => void;
   onExpire: () => void;
+  onPauseEnd: () => void;
 }) {
   React.useEffect(() => {
     const interval = setInterval(() => {
+      if (isPaused) {
+        const remaining = Math.max(0, Math.ceil((pauseEndsAt - Date.now()) / 1000));
+        setPauseRemainingSeconds(remaining);
+        if (remaining <= 0) onPauseEnd();
+        return;
+      }
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
       onTick(elapsed);
       if (elapsed >= durationSeconds) {
-        clearInterval(interval);
         onExpire();
       }
     }, 1000);
     return () => clearInterval(interval);
-  }, [durationSeconds, startedAt, onTick, onExpire]);
+  }, [durationSeconds, startedAt, isPaused, pauseEndsAt, onTick, onExpire, onPauseEnd, setPauseRemainingSeconds]);
   return null;
 }
 

@@ -1,17 +1,18 @@
 /**
- * Agentic workflow: MedGemma makes decisions via tool-calling.
- * Session orchestration: Patient → Continuous AI reasoning → Adaptive session → Structured summary → Proactive intervention.
- * Tools: set_therapy_intensity, trigger_regression_intervention, record_session_summary.
+ * Agentic workflow: MedGemma (Vertex AI or Gemini) makes decisions.
+ * When Vertex MedGemma is configured, uses a single structured JSON prompt (no native tool-calling on Vertex).
+ * Otherwise uses Gemini API with function-calling tools.
  */
 
 import { GoogleGenAI } from '@google/genai';
+import { vertexMedGemmaGenerate, isVertexMedGemmaAvailable } from './medgemma-vertex.js';
 
 const apiKey = process.env.GEMINI_API_KEY || process.env.MEDGEMMA_API_KEY;
 const model = process.env.MEDGEMMA_MODEL || 'gemini-2.0-flash';
 
-let client = null;
+let geminiClient = null;
 if (apiKey) {
-  client = new GoogleGenAI({ apiKey });
+  geminiClient = new GoogleGenAI({ apiKey });
 }
 
 // --- Function declarations for Gemini (OpenAPI-style) ---
@@ -144,7 +145,72 @@ function getResponseText(response) {
 }
 
 /**
- * Run agentic orchestration: send context to MedGemma with tools; loop until no more function calls; return decisions and summary.
+ * Vertex MedGemma: single-turn structured JSON output (no native tool-calling).
+ */
+async function runAgenticOrchestrationVertex(options) {
+  const { sessions = [], currentSession, regressionDetected, alerts = [], patientState = {} } = options;
+  const sessionContext = sessionsToContext(sessions, currentSession);
+  const alertText =
+    alerts.length > 0 ? `Alerts: ${alerts.map((a) => a.msg || a).join('; ')}` : 'No alerts.';
+  const stateText = patientState.lastIntensity
+    ? `Last recommended intensity: ${patientState.lastIntensity}.`
+    : '';
+  const systemPrompt =
+    'You are a clinical assistant for stroke rehabilitation. Output only valid JSON, no markdown. Use this exact shape: {"recommendedIntensity":"low"|"medium"|"high","interventions":[{"reason":"...","suggestedAction":"..."}],"sessionSummary":{"summary":"...","nextFocus":"..."}}. Omit interventions if none; omit sessionSummary if no current session.';
+  const userPrompt = `Session history:\n${sessionContext}\n\n${alertText}\n${stateText}\n${
+    regressionDetected ? 'Regression DETECTED. Include an intervention with reason and suggestedAction.' : ''
+  }\n${
+    currentSession
+      ? 'Session just completed. Set recommendedIntensity and sessionSummary (summary + nextFocus).'
+      : 'Set recommendedIntensity for next session.'
+  }\n\nOutput JSON only:`;
+
+  const text = await vertexMedGemmaGenerate(systemPrompt, userPrompt, 1024, 0.3);
+  let recommendedIntensity = patientState.lastIntensity || 'medium';
+  const interventions = [];
+  let sessionSummary = null;
+  const toolCallsMade = [];
+
+  if (text) {
+    try {
+      const raw = text.replace(/```json?\s*|\s*```/g, '').trim();
+      const json = JSON.parse(raw);
+      if (json.recommendedIntensity && ['low', 'medium', 'high'].includes(json.recommendedIntensity)) {
+        recommendedIntensity = json.recommendedIntensity;
+        toolCallsMade.push({ name: 'set_therapy_intensity', args: { level: recommendedIntensity }, result: { applied: true } });
+      }
+      if (Array.isArray(json.interventions) && json.interventions.length) {
+        for (const i of json.interventions) {
+          interventions.push({
+            reason: i.reason ?? '',
+            suggestedAction: i.suggestedAction ?? '',
+          });
+          toolCallsMade.push({ name: 'trigger_regression_intervention', args: i, result: { recorded: true } });
+        }
+      }
+      if (json.sessionSummary && (json.sessionSummary.summary || json.sessionSummary.nextFocus)) {
+        sessionSummary = {
+          summary: json.sessionSummary.summary ?? '',
+          nextFocus: json.sessionSummary.nextFocus ?? '',
+        };
+        toolCallsMade.push({ name: 'record_session_summary', args: sessionSummary, result: { recorded: true } });
+      }
+    } catch (e) {
+      console.error('Vertex MedGemma JSON parse error:', e?.message || e);
+    }
+  }
+
+  return {
+    recommendedIntensity,
+    interventions,
+    sessionSummary,
+    reasoning: text || 'MedGemma (Vertex) structured output.',
+    toolCallsMade,
+  };
+}
+
+/**
+ * Run agentic orchestration: MedGemma (Vertex or Gemini) decides therapy intensity, interventions, session summary.
  * @param {object} options
  * @param {object[]} options.sessions - Recent stored sessions (state memory).
  * @param {object} [options.currentSession] - Just-completed or in-progress session.
@@ -155,9 +221,13 @@ function getResponseText(response) {
 export async function runAgenticOrchestration(options = {}) {
   const { sessions = [], currentSession, regressionDetected, alerts = [], patientState = {} } = options;
 
-  if (!client) {
+  if (isVertexMedGemmaAvailable()) {
+    return runAgenticOrchestrationVertex(options);
+  }
+
+  if (!geminiClient) {
     return {
-      recommendedIntensity: 'medium',
+      recommendedIntensity: patientState.lastIntensity || 'medium',
       interventions: [],
       sessionSummary: null,
       reasoning: 'LLM not configured; using defaults.',
@@ -199,7 +269,7 @@ export async function runAgenticOrchestration(options = {}) {
   try {
     while (round < maxRounds) {
       round += 1;
-      const response = await client.models.generateContent({
+      const response = await geminiClient.models.generateContent({
         model,
         contents,
         config,
@@ -238,7 +308,6 @@ export async function runAgenticOrchestration(options = {}) {
     lastText = `Error: ${err?.message || 'orchestration failed'}. Using defaults.`;
   }
 
-  // Derive structured output from tool results
   let recommendedIntensity = patientState.lastIntensity || 'medium';
   const interventions = [];
   let sessionSummary = null;
@@ -271,5 +340,5 @@ export async function runAgenticOrchestration(options = {}) {
 }
 
 export function isAgenticLlmAvailable() {
-  return !!client;
+  return isVertexMedGemmaAvailable() || !!geminiClient;
 }
