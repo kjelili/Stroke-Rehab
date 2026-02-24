@@ -1,55 +1,107 @@
-# Stack review: Neuro-Recover vs required feasibility stack
+# Tech stack review: Neuro-Recover
 
 **Scope:** Vision + Voice + MedGemma report generation. Out of scope: VR, wearables, full digital twin, reinforcement learning.
 
-This document maps the **required stack** (frontend, AI, deployment, demonstration) to what is **implemented** and what is **documented or optional**, for feasibility scoring.
+This document summarizes the **technology stack** in use and maps **feasibility requirements** to implementation.
 
 ---
 
-## Frontend
+## Stack at a glance
 
-| Requirement | Status | Location / notes |
-|------------|--------|------------------|
-| **React** | ✅ In use | `web-app/` – React 19, Vite, TypeScript. |
-| **WebRTC camera feed** | ✅ In use | `CameraView.tsx`: `navigator.mediaDevices.getUserMedia({ video })`; stream passed to `<video>`. Same media pipeline as WebRTC (getUserMedia). |
-| **Vision** | ✅ In use | Camera + hand tracking for all games; `CameraView` + `useHandTracking`. |
-| **MediaPipe for landmark extraction** | ✅ In use | `useHandTracking.ts`: `@mediapipe/tasks-vision` `HandLandmarker`, `detectForVideo(video, timestamp)` → `landmarks` (21 points per hand). Used in Piano, Bubbles, GrabCup, Button, ReachHold, FingerTap. |
-| **Local feature engineering (ROM, tremor, smoothness)** | ✅ Implemented | `utils/landmarkFeatures.ts`: ROM from landmarks (extension per finger); tremor (position variance over time); smoothness (inverse of motion jerk). Piano (and optionally other games) pass recent landmark history to compute and store in session metrics. |
+| Layer | Technologies |
+|-------|--------------|
+| **Frontend** | React 19, TypeScript, Vite 7, Tailwind CSS 3, React Router 7, PWA (vite-plugin-pwa) |
+| **Vision** | MediaPipe Tasks Vision (HandLandmarker), getUserMedia camera |
+| **Charts / PDF** | Recharts, jsPDF |
+| **Backend** | Node.js (ESM), Express 4, CORS, dotenv |
+| **AI / LLM** | @google/genai (Gemini API), google-auth-library (Vertex); optional HEAR, MedSigLIP |
+| **Deployment** | Docker (backend), edge build (VITE_EDGE_MODE), static hosting |
 
 ---
 
-## AI layer (MedGemma)
+## Frontend (`web-app/`)
 
-| Requirement | Status | Location / notes |
-|------------|--------|------------------|
-| **MedGemma fine-tuned on: Rehab notes, SOAP notes, Stroke clinical data** | 📄 Documented | Backend uses **Gemini API** with medical prompts; swap to Vertex MedGemma or fine-tuned model. Dataset and LoRA: `backend/FINE_TUNING.md`. |
-| **LoRA fine-tuning** | 📄 Documented | `backend/FINE_TUNING.md`: dataset description, LoRA approach, evaluation (BLEU, ROUGE, clinician rating), before/after examples. |
-| **MedGemma as clinical engine** | ✅ Implemented | **Clinical reasoning engine** (`/api/clinical-reasoning`), **SOAP note formatter** (`/api/soap-note`), **ICD-10 tagging** (`/api/icd10-tagging`), **FHIR structuring** (`/api/fhir-structure`). See `backend/README.md`. |
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| **React** | 19.x | UI components, hooks, context (Session, Auth, Demo). |
+| **TypeScript** | 5.9 | Typed APIs, session/agentic types, app config. |
+| **Vite** | 7.x | Dev server, HMR, production build. |
+| **Tailwind CSS** | 3.x | Utility-first styling, theme (brand, surface), responsive layout. |
+| **React Router** | 7.x | Routes: `/`, `/login`, `/app`, `/app/progress`, `/app/piano`, etc. |
+| **@mediapipe/tasks-vision** | 0.10.x | Hand landmarker: 21 points per hand, used in all six games. |
+| **jspdf** | 4.x | Session and progress report PDF export. |
+| **recharts** | 2.x | Progress / clinician charts (if used). |
+| **vite-plugin-pwa** | 1.x | Service worker, manifest, offline-capable build. |
+
+**Key modules:** `CameraView`, `useHandTracking`, `landmarkFeatures` (ROM, tremor, smoothness), `gameSounds` (Web Audio), `sessionStorage`, `agentState`, `medgemma` API client.
+
+---
+
+## Backend (`backend/`)
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| **Node.js** | (ESM) | Runtime; `node --watch` for dev. |
+| **Express** | 4.x | HTTP server, JSON body, CORS. |
+| **cors** | 2.x | Allow frontend origin. |
+| **dotenv** | 17.x | Load `.env` (GEMINI_API_KEY, PORT, Vertex vars). |
+| **@google/genai** | 1.x | Gemini API for LLM calls (reports, coaching, agentic). |
+| **google-auth-library** | 9.x | Vertex AI auth (MedGemma, HEAR, MedSigLIP endpoints). |
+
+**Key modules:** `server.js` (routes), `llm.js` (Gemini/Vertex MedGemma), `agentic.js` (orchestration, tool-calling), `hear.js` (HEAR embeddings), `medsiglip.js` (MedSigLIP image/text embeddings).
+
+**APIs:** Health, HAI-DEF status, session-interpretation, progress-report, clinician-summary, coaching, dysarthria-analysis, clinical-suggestions/reasoning, soap-note, icd10-tagging, fhir-structure, **agentic/orchestrate**, hear/analyze, medsiglip/embed.
+
+---
+
+## AI layer (MedGemma / HAI-DEF)
+
+| Requirement | Status | Notes |
+|------------|--------|-------|
+| **MedGemma as clinical engine** | ✅ | Clinical reasoning, SOAP, ICD-10, FHIR, agentic tools (set_therapy_intensity, trigger_regression_intervention, record_session_summary). Gemini API proxy or Vertex MedGemma. |
+| **Agentic orchestration** | ✅ | `POST /api/agentic/orchestrate`; tool-calling loop in `agentic.js`; frontend shows intensity and session summary. |
+| **HEAR (bioacoustic)** | ✅ Optional | `hear.js` + `/api/hear/analyze` when HEAR_VERTEX_ENDPOINT_ID set. |
+| **MedSigLIP (image/text)** | ✅ Optional | `medsiglip.js` + `/api/medsiglip/embed` when MEDSIGLIP_VERTEX_ENDPOINT_ID set. |
+| **Fine-tuning / LoRA** | 📄 Documented | `backend/FINE_TUNING.md`; production swap to Vertex or fine-tuned model. |
+
+---
+
+## Vision & local features
+
+| Requirement | Status | Location |
+|------------|--------|----------|
+| **Camera feed** | ✅ | `CameraView.tsx`: `getUserMedia({ video })` → `<video>`. |
+| **MediaPipe hand landmarks** | ✅ | `useHandTracking.ts`: HandLandmarker, 21 points per hand. |
+| **ROM, tremor, smoothness** | ✅ | `landmarkFeatures.ts`; used in Piano (and extensible to other games). |
+| **Games** | ✅ | Piano, Bubbles, Grab cup, Button, Reach & hold, Finger tap — all use landmarks or tap fallback. |
 
 ---
 
 ## Deployment
 
-| Requirement | Status | Location / notes |
-|------------|--------|------------------|
-| **Docker** | ✅ In use | `backend/Dockerfile`: Node backend, port 4000. `docker-compose.yml` (optional): backend + static web-app. See `backend/README.md` and root `DEPLOYMENT.md`. |
-| **Local GPU** | 📄 Documented | `backend/FEASIBILITY.md`: run backend with a local LLM (e.g. Ollama, llama.cpp, or ONNX) for GPU/CPU inference; no cloud. |
-| **CPU-optimized inference** | 📄 Documented | Edge mode: no cloud calls; rule-based interpretations. For local LLM: use quantized models (e.g. GGUF Q4) or ONNX CPU runtime. See `backend/FEASIBILITY.md`. |
+| Option | How |
+|--------|-----|
+| **Backend** | `npm run dev` or `npm start` in `backend/`; Docker: `backend/Dockerfile`, `docker-compose.yml`. |
+| **Frontend** | `npm run dev` / `npm run build` in `web-app/`; serve `dist/` (any static host). |
+| **Edge (offline)** | `VITE_EDGE_MODE=true` (PowerShell: `$env:VITE_EDGE_MODE="true"; npm run dev`); no backend URL. |
+| **Local GPU/LLM** | 📄 Documented in `backend/FEASIBILITY.md`. |
 
 ---
 
-## Demonstration proof
+## Feasibility vs implementation
 
 | Requirement | Status | How to show |
 |------------|--------|-------------|
-| **Report generation from synthetic patient dataset** | ✅ Supported | 1) Open app with `?seedDemo=1` (or call `window.__seedMockSessions()`). 2) Go to **Progress** and click **Export PDF** (progress report). Report is generated from synthetic sessions (no real patient data). With backend: narrative from LLM; in edge mode: rule-based narrative. |
-| **Local inference (no cloud calls)** | ✅ Supported | 1) Build web app with **edge mode**: `VITE_EDGE_MODE=true` (no `VITE_MEDGEMMA_BACKEND_URL`). 2) Serve `dist/` locally. 3) Use **Progress → Export PDF** and **Clinician** view: all text is rule-based, no network. Header shows **Offline**. Optional: run backend with a local LLM (Ollama) for true local inference. |
+| **Report from synthetic data** | ✅ | `/demo` or `?demo=1` → seed sessions → Progress → Export PDF. |
+| **Local / no cloud** | ✅ | Edge build; header “Edge: Offline” and Dashboard edge banner. |
+| **MedGemma in use** | ✅ | Dashboard “MedGemma (HAI-DEF) in use” and agentic block; session complete summary. |
+| **Agentic orchestration** | ✅ | Dashboard expandable “Agentic orchestration”; session complete “From tool record_session_summary”. |
 
 ---
 
 ## Summary
 
-- **Frontend**: React, camera feed, vision, MediaPipe landmarks, and local feature engineering (ROM, tremor, smoothness) are implemented.
-- **AI**: MedGemma-style behavior is provided via Gemini API + medical prompts; MedGemma fine-tuning and LoRA are documented for production.
-- **Deployment**: Docker (backend, optional compose), local GPU/CPU inference paths documented.
-- **Proof**: Synthetic dataset + report generation via `?seedDemo=1` and PDF export; edge mode demonstrates full flow with no cloud calls.
+- **Frontend:** React 19 + Vite 7 + TypeScript + Tailwind; MediaPipe hands; PWA; jsPDF.
+- **Backend:** Node (ESM) + Express; Gemini/Vertex for MedGemma-style LLM; agentic tool-calling; optional HEAR and MedSigLIP.
+- **Deployment:** Docker for backend; edge mode for offline frontend; static build for web.
+- **Proof:** Synthetic demo, PDF export, edge banner, and explicit MedGemma/agentic UI.
